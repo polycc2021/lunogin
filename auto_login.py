@@ -41,7 +41,6 @@ def run():
         sys.exit(1)
 
     with sync_playwright() as p:
-        # 增加防检测参数
         browser = p.chromium.launch(
             headless=True,
             args=[
@@ -56,16 +55,18 @@ def run():
         )
         page = context.new_page()
 
-        print("正在打开登录页面...")
+        print("正在访问 Betadash 首页...")
         try:
-            page.goto("https://betadash.lunes.host/auth/login", timeout=60000, wait_until="domcontentloaded")
+            # 更改为直接访问根域名，由面板自行重定向至正确登录页
+            page.goto("https://betadash.lunes.host/", timeout=60000, wait_until="domcontentloaded")
+            page.wait_for_timeout(3000)
         except Exception as e:
             print(f"页面加载警告: {e}")
 
         print(f"当前页面标题: {page.title()}")
-        print(f"当前页面 URL: {page.url}")
+        print(f"跳转后 URL: {page.url}")
 
-        # 检查是否遭遇到 Cloudflare 5秒盾
+        # 检查 Cloudflare 防护
         if "Just a moment" in page.title() or "Cloudflare" in page.title():
             fail_msg = "⚠️ <b>Betadash 面板自动登录失败</b>\n遇到了 Cloudflare 人机验证盾，无头浏览器被拦截。"
             print(fail_msg)
@@ -74,11 +75,10 @@ def run():
 
         try:
             print("正在寻找输入框...")
-            # 扩展兼容多种输入框属性
             username_input = page.locator('input[name="username"], input[name="email"], input[name="user"], input[name="username_or_email"], input[type="text"], input[type="email"]').first
             password_input = page.locator('input[name="password"], input[type="password"]').first
 
-            # 显式等待输入框渲染完成
+            # 显式等待输入框渲染
             username_input.wait_for(state="visible", timeout=20000)
 
             print("正在填写账号密码...")
@@ -94,18 +94,19 @@ def run():
             current_url = page.url
             print(f"登录后 URL: {current_url}")
 
-            if "auth/login" not in current_url:
+            # 只要不在登录相关路径且能访问面板首页/服务器列表即视作成功
+            if "login" not in current_url.lower() and "auth" not in current_url.lower():
                 success_msg = "🎉 <b>Betadash 面板自动登录成功</b>\n项目已成功刷取活跃状态。"
                 print("登录成功！已保持活跃状态。")
                 send_telegram_msg(success_msg)
             else:
-                fail_msg = "⚠️ <b>Betadash 面板自动登录失败</b>\n页面仍停留在登录页，可能密码错误或触发了验证码。"
-                print("登录可能失败，请检查账号密码。")
+                fail_msg = f"⚠️ <b>Betadash 面板自动登录失败</b>\n页面仍停留在登录页 ({current_url})，请检查账号密码是否正确。"
+                print("登录失败，页面未跳转。")
                 send_telegram_msg(fail_msg)
                 sys.exit(1)
 
         except Exception as e:
-            error_msg = f"⚠️ <b>Betadash 面板自动登录异常</b>\n未能在页面找到输入框或操作超时。\n当前页面: {page.title()}\n错误: {e}"
+            error_msg = f"⚠️ <b>Betadash 面板自动登录异常</b>\n未能在页面找到输入框或操作超时。\n当前页面标题: {page.title()}\n当前 URL: {page.url}\n错误: {e}"
             print(error_msg)
             send_telegram_msg(error_msg)
             sys.exit(1)
